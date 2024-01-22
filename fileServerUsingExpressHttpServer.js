@@ -14,7 +14,7 @@ async function load()
 
   app.use(express.static("output"));
 
-  app.listen(80);
+  app.listen(443);
 }
 
 load();
