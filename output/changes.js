@@ -7413,6 +7413,7 @@
           // let items = [].concat(...await Promise.all(compressedItemsPerStore));
           let items = await fetch(`data/latest-canonical.json`);
           items = await items.json();
+          newStats(items);
           log(`Loader - loaded ${items.length} items took ${deltaTime(start).toFixed(4)} secs`);
           const result = this.processItems(items);
           log(`Loader - total loading took ${deltaTime(start).toFixed(4)} secs`);

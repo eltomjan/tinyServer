@@ -67,5 +67,171 @@
         </small>
     </footer>
 </body>
+<script>
+var o = {};
+var js = {};
+function newStats(items)
+{
+    for(var i of items)
+    {
+        if (i.priceHistory.length <= 1) continue;
+        js[i.store] ||= {};
+        js[i.store][i.id] = i;
+    }
+    for(var s in js)
+    {
+        o[s] = {};
+        statStore(o[s], js[s], s);
+    }
+    var rep = [];
+    for(var s in o)
+    {
+        rep.push(`<style>u { text-decoration: none; }</style><b>${s.toUpperCase()} ${Math.round((o[s].pos)*10000)/100}% minima</b><u> resp. ${Math.round((o[s].pos/o[s].avg)*10000)/100}% průměrných cen, rozsah </u><b>${Math.round((o[s].min)*10000)/100}%-${Math.round((o[s].max-1)*10000)/100}%</b>, průměrná cena měněných položek ${Math.round((o[s].avg)*10000)/100}%.<span class="hidden">`);
+        rep.push(`Největší sleva <b>${o[s].minItem.name}</b>, ceny ${adjustHistory(JSON.stringify(o[s].minItem.priceHistory))}.`);
+        rep.push(`Největší zdražení <b>${o[s].maxItem.name}</b>, ceny ${adjustHistory(JSON.stringify(o[s].maxItem.priceHistory))}.`);
+        rep.push("<b>Skokani dnů:</b>");
+        let order = o[s].dates;
+        let sortDates = Object.keys(order).sort().reverse();
+        for(var d of sortDates)
+        {
+            var o2 = order[d];
+            rep.push(`${d} <b>${Math.round((o2.pos)*10000)/100}%</b> minima, <b>${o2.count}</b> přeceněných položek.`);
+            if (o2.minItem)
+            rep.push(`- největší sleva (o <b>${-Math.round((1-o2.min)*10000)/100}%</b>) ${o2.minItem.name}, ceny ${adjustHistory(JSON.stringify(o2.minItem.priceHistory))}.`);
+            if (o2.maxItem)
+            rep.push(`- největší zdražení (o <b>${Math.round((o2.max-1)*10000)/100}</b>) ${o2.maxItem.name}, ceny ${adjustHistory(JSON.stringify(o[s].maxItem.priceHistory))}.`);
+        }
+        rep.push("</span>");
+    }
+    var otpt = document.querySelector("items-list");
+    if (otpt.previousElementSibling.constructor != HTMLDivElement) {
+        var div = document.createElement("DIV");
+        otpt.parentElement.insertBefore(div, otpt)
+        div.onclick = toggleVisibility;
+    }
+    otpt = otpt.previousElementSibling;
+    otpt.innerHTML = rep.join('<br>');
+}
+function toggleVisibility(e)
+{
+    var el = e.srcElement;
+    if (el.firstElementChild?.constructor == HTMLBRElement) return;
+    while(el) {
+        if (el.constructor == HTMLSpanElement) {
+            if (el.classList.contains("hidden")) el.classList.remove("hidden");
+            else el.classList.add("hidden");
+            break;
+        }
+        el = el.nextElementSibling;
+    }
+}
+function statStore(o, s, n)
+{
+    var items = Object.keys(s);
+    o.min=1e308;
+    o.max=-1e308;
+    o.avg=0;
+    o.pos=0;
+    o.dates = {};
+    var l = 0;
+    for(var x of items)
+    {
+        var i = s[x];
+        if (i.price == 0 || i.priceHistory.length == 1) continue;
+        var o2 = statItem(o.dates,i);
+        if (isNaN(o2.avg)) debugger;
+        o.avg += o2.avg;
+        if (o2.min < o.min) {
+            o.min = o2.min;
+            o.minItem = i;
+        }
+        if (o2.max > o.max) {
+            o.max = o2.max;
+            o.maxItem = i;
+        }
+        o.pos += o2.pos;
+        l++;
+    }
+    for(var x in o.dates)
+    {
+        o.dates[x].avg /= o.dates[x].count;
+        o.dates[x].pos /= o.dates[x].count;
+    }
+    o.avg /= l;
+    o.pos /= l;
+}
+function storeByDate(o, date, stats, inp)
+{
+    if (!o[date]) o[date] = { min:1e308, max:-1e308, avg:0, pos:0, count:0 };
+    var mins = Object.keys(stats.datePrice);
+    if (o[date].min > stats.min && inp.priceHistory[0].date == date) {
+        for(var i=1;i<inp.priceHistory.length;i++)
+        {
+            if (inp.priceHistory[i].date < date) {
+                o[date].min = stats.min;
+                o[date].minItem = inp;
+                break;
+            }
+        }
+    }
+    if (o[date].max < stats.max //&& stats.max == stats.datePrice[date]
+    && inp.priceHistory.slice(-1)[0].price / inp.priceHistory[0].price == stats.datePrice[date]) {
+        var i=inp.priceHistory.length-2;
+        while(i >= 0)
+        {
+            if (inp.priceHistory[i].date < date) {
+                o[date].max = stats.max;
+                o[date].maxItem = inp;
+                break;
+            }
+            i--;
+        }
+    }
+    o[date].avg += stats.avg;
+    o[date].pos += stats.pos;
+    o[date].count++;
+}
+function byPrice(a, b)
+{
+    var sgn = Math.sign(a.price - b.price);
+    if (sgn != 0) return sgn; 
+    if (a.date > b.date) return 1;
+    else if (a.date < b.date) return -1;
+    return 0;
+}
+function statItem(dates, inp)
+{
+    inp.priceHistory.sort(byPrice)
+    var o = { min:inp.priceHistory[0].price, max:inp.priceHistory.slice(-1)[0].price, avg:0, pos:0, datePrice:{} }
+    var minMax = [o.min, o.max];
+    for(var i of inp.priceHistory)
+    {
+        o.avg += i.price;
+        if (i.price == inp.priceHistory[0].price) {
+            if (inp.priceHistory.length > 1) o.datePrice[i.date] = i.price / inp.priceHistory[1].price;
+            else o.datePrice[i.date] = 1
+        } else
+            o.datePrice[i.date] = i.price / o.min;
+    }
+    o.avg = (o.avg / o.min) / inp.priceHistory.length;
+    o.pos = inp.price / o.min;
+    o.max /= o.min;
+    if (inp.price == inp.priceHistory[0].price) {
+        if (inp.priceHistory.length > 1) o.min = inp.price / inp.priceHistory[1].price;
+        else o.datePrice[i.date] = 1
+    } else o.min = 1;
+    for(var i of inp.priceHistory)
+    {
+        storeByDate(dates, i.date, o, inp);
+    }
+    return o;
+}
+function adjustHistory(s)
+{
+    return s.substr(2).replace(/"date":"20/g, "")
+    .replace(/","price":/g, " ")
+    .replace(/\},\{/g, " Kč, ")
+    .replace(/\}]/g, " Kč")
+}
+</script>
 </html>
-
